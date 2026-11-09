@@ -1,6 +1,7 @@
 import asyncio
 import os
 import re
+import shutil
 import time
 from dataclasses import dataclass
 
@@ -79,8 +80,9 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Привіт! Я AFK-бот для Minecraft. Я заходжу на твій сервер і стою AFK скільки треба.\n\n"
         "📌 Команди:\n"
-        "/start_afk <айпі сервера> <версія> <час> [нікнейм]\n"
+        "/start_afk <айпі сервера> <версія> <час> [нікнейм] [пароль]\n"
         "   Приклад: /start_afk play.server.net 1.21.11 5г MyBot\n"
+        "   Пароль потрібен, якщо на сервері є /register і /login — бот зареєструється сам.\n"
         "   Версію можна написати auto — бот сам визначить її.\n"
         "   Нікнейм не обов'язковий (за замовчуванням AFK_BOT).\n"
         "   Айпі можна з портом: play.server.net:25566\n\n"
@@ -116,6 +118,7 @@ async def cmd_start_afk(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     server, version, time_str = args[0], args[1], args[2]
     nick = args[3] if len(args) > 3 else DEFAULT_NICK
+    password = args[4] if len(args) > 4 else ""
 
     if version.lower() != "auto" and not re.fullmatch(r"\d+\.\d+(\.\d+)?", version):
         await update.message.reply_text("❌ Неправильна версія. Приклад: 1.21.11 або auto")
@@ -139,8 +142,21 @@ async def cmd_start_afk(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Неправильний порт.")
         return
 
+    node = shutil.which("node")
+    if not node:
+        await update.message.reply_text(
+            "❌ На сервері не встановлено Node.js. Переконайся, що Railway збирає проєкт через Dockerfile."
+        )
+        return
+    if not os.path.exists(AFK_SCRIPT):
+        await update.message.reply_text("❌ Не знайдено файл afk.js поруч з bot.py.")
+        return
+
+    cmd = [node, AFK_SCRIPT, host, port, nick, version.lower()]
+    if password:
+        cmd.append(password)
     proc = await asyncio.create_subprocess_exec(
-        "node", AFK_SCRIPT, host, port, nick, version.lower(),
+        *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
     )
@@ -155,12 +171,26 @@ async def cmd_start_afk(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             async for raw in proc.stdout:
                 line = raw.decode(errors="ignore").strip()
-                if line == "AFK_SPAWN":
-                    await ctx.bot.send_message(chat_id, f"✅ {nick} зайшов на {server} і стоїть AFK.")
+                if not line:
+                    continue
+                if line.startswith("AFK_JOINED"):
+                    ver = line[11:].strip() or "?"
+                    await ctx.bot.send_message(
+                        chat_id, f"✅ {nick} зайшов на {server} (версія {ver}) і стоїть AFK."
+                    )
+                elif line == "AFK_SPAWN":
+                    pass
+                elif line.startswith("AFK_CHAT"):
+                    await ctx.bot.send_message(chat_id, f"💬 Сервер: {line[9:300]}")
                 elif line.startswith("AFK_KICKED"):
                     await ctx.bot.send_message(chat_id, f"🚫 Бота кікнуло: {line[11:300]}")
                 elif line.startswith("AFK_ERROR"):
                     await ctx.bot.send_message(chat_id, f"❌ Помилка: {line[10:300]}")
+                elif line.startswith("AFK_END"):
+                    pass
+                else:
+                    # будь-який інший вивід Node (наприклад, падіння програми)
+                    await ctx.bot.send_message(chat_id, f"⚠️ {line[:300]}")
             await proc.wait()
             s = sessions.get(user_id)
             if s and not s.stopped:
