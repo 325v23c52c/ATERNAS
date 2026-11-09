@@ -180,6 +180,8 @@ async def cmd_start_afk(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     )
                 elif line == "AFK_SPAWN":
                     pass
+                elif line.startswith("AFK_INFO"):
+                    await ctx.bot.send_message(chat_id, f"ℹ️ {line[9:300]}")
                 elif line.startswith("AFK_CHAT"):
                     await ctx.bot.send_message(chat_id, f"💬 Сервер: {line[9:300]}")
                 elif line.startswith("AFK_KICKED"):
