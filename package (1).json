@@ -1,0 +1,17 @@
+{
+  "name": "afk-bot",
+  "version": "2.0.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "mineflayer": "latest",
+    "minecraft-protocol": "latest",
+    "telegraf": "^4.16.3"
+  }
+}
